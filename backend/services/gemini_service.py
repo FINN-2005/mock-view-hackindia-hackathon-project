@@ -211,11 +211,18 @@ def build_interview_system_prompt(config: dict) -> str:
     return (
         f"{persona}\n\n"
         f"Role: {config.get('role', 'Software Engineer')}\n"
+        f"Company: {config.get('company', 'Not specified')}\n"
         f"Salary: {config.get('salary', 'not specified')}\n"
         f"Experience required: {config.get('experience', 'not specified')} years\n"
         f"Location: {config.get('location', 'not specified')}\n"
         f"Found via: {config.get('source', 'not specified')}\n"
         f"Round type: {config.get('round_type', 'technical rounds')}\n\n"
+        "CRITICAL: Evaluate candidates primarily on their ANSWERS and RESPONSES during the interview. "
+        "Do NOT award high scores based on resume alone. The candidate should be graded on:\n"
+        "1. Quality of their answers to your questions (PRIMARY)\n"
+        "2. Depth of technical knowledge demonstrated through discussion\n"
+        "3. Communication clarity and problem-solving approach\n"
+        "4. Their resume/background should only inform context, not inflate scores\n\n"
         "You have the candidate's profile and accumulated interview notes. "
         "Ask relevant, personalised questions based on the candidate's background. "
         "DO NOT send full resume — use only the provided profile summary and notes.\n\n"
@@ -271,19 +278,28 @@ async def interview_turn(
 EVAL_SYSTEM = (
     "You are an expert interview evaluator for a mock interview platform. "
     "Given the interview notes, candidate profile, and interview configuration, provide a comprehensive evaluation.\n\n"
+    "CRITICAL GRADING CRITERIA:\n"
+    "1. PRIMARY: Evaluate based on the candidate's ANSWERS and RESPONSES during the interview\n"
+    "2. SECONDARY: Use resume/profile background only as context, not to inflate scores\n"
+    "3. A good resume does NOT guarantee a high score if interview performance is weak\n"
+    "4. Questions answered poorly even with a strong resume = lower score\n"
+    "5. Strong answers despite modest resume = higher score\n\n"
     "Tasks:\n"
-    "1. Update the candidate's profile: update strengths, weaknesses, and ai_remark based on interview performance.\n"
+    "1. Update the candidate's profile: update strengths, weaknesses, and ai_remark based PRIMARILY on interview performance.\n"
     "2. Preserve existing valid profile data unless directly contradicted by the interview.\n"
     "3. Generate a growth_score (0–1000): "
     "1–100 = needs significant work, 100–300 = early stage, 300–500 = developing, "
-    "500–700 = decently hirable, 700–900 = strong candidate, 900–1000 = elite.\n"
-    "4. Generate job_likelihood (0–100): realistic % chance for this specific role.\n"
-    "5. Write a summary (2–3 sentence paragraph) of overall performance.\n\n"
+    "500–700 = decently hirable, 700–900 = strong candidate, 900–1000 = elite. "
+    "Score should reflect interview performance (answers, clarity, technical depth), NOT resume quality alone.\n"
+    "4. Generate job_likelihood (0–100): realistic % chance for this specific role based PRIMARILY on interview performance.\n"
+    "5. Generate confidence_score (0–100): how confident the evaluator is in the assessment (70-100 = very confident, 40-70 = somewhat confident, <40 = not confident).\n"
+    "6. Write a summary (2–3 sentence paragraph) of overall interview performance.\n\n"
     "Return ONLY this JSON structure:\n"
     "{\n"
     '  "updated_profile": { ...full profile.json structure... },\n'
     '  "growth_score": number,\n'
     '  "job_likelihood": number,\n'
+    '  "confidence_score": number,\n'
     '  "summary": "string"\n'
     "}\n"
     "Return ONLY the JSON. No markdown. No explanation."
@@ -306,5 +322,66 @@ async def evaluate_interview(
     for key in ["updated_profile", "growth_score", "job_likelihood", "summary"]:
         if key not in result:
             raise ValueError(f"Evaluation result missing key: {key}")
+
+    return result
+
+
+# ── Detailed Evaluation (for enhanced results screen) ──────────────────────────
+
+DETAILED_EVAL_SYSTEM = (
+    "You are an expert career coach and interview analyst for a mock interview platform. "
+    "Given the interview notes, candidate profile, and interview configuration, provide a DETAILED "
+    "analysis that will help the candidate improve.\n\n"
+    "Provide a JSON object with the following comprehensive breakdown:\n"
+    "1. score_breakdown: Analysis of how the final score was calculated (e.g., 'Technical Q&A: 65/100 (strong concepts, but struggled with edge cases); Communication: 75/100 (clear but occasionally vague); Problem-solving: 60/100 (good approach but slow execution)')\n"
+    "2. confidence_analysis: Detailed explanation of the evaluator's confidence in the assessment (e.g., 'Strong confidence due to consistent performance across multiple rounds and clear technical depth demonstrated')\n"
+    "3. confidence_tips: Specific, actionable tips to improve confidence in future interviews (list of 3-4 targeted tips)\n"
+    "4. top_strengths: List of 3-5 key strengths demonstrated during the interview\n"
+    "5. critical_gaps: List of 3-5 areas that need immediate improvement based on interview performance\n"
+    "6. improvement_plan: A structured, actionable 30-day improvement plan tailored to the role and gaps identified\n"
+    "7. next_suggested_plan: What the candidate should do next (e.g., 'Practice system design interviews focusing on scalability', 'Build a project using Technology X', etc.)\n\n"
+    "Return ONLY this JSON structure:\n"
+    "{\n"
+    '  "score_breakdown": "string",\n'
+    '  "confidence_analysis": "string",\n'
+    '  "confidence_tips": ["string", "string", "string"],\n'
+    '  "top_strengths": ["string", "string", "string"],\n'
+    '  "critical_gaps": ["string", "string", "string"],\n'
+    '  "improvement_plan": "string",\n'
+    '  "next_suggested_plan": "string"\n'
+    "}\n"
+    "Return ONLY the JSON. No markdown. No explanation."
+)
+
+
+async def get_detailed_evaluation(
+    profile: dict,
+    notes: list,
+    config: dict,
+    growth_score: int,
+) -> dict:
+    """Generate detailed evaluation analysis for results screen."""
+    prompt = (
+        f"CANDIDATE PROFILE:\n{json.dumps(profile, indent=2)}\n\n"
+        f"INTERVIEW NOTES:\n{json.dumps(notes, indent=2)}\n\n"
+        f"INTERVIEW CONFIG:\n{json.dumps(config, indent=2)}\n\n"
+        f"GROWTH SCORE: {growth_score}/1000\n\n"
+        "Generate a comprehensive, detailed analysis to help this candidate improve their interview skills."
+    )
+    result = await call_gemini_json(DETAILED_EVAL_SYSTEM, prompt)
+
+    # Validate output
+    required_keys = [
+        "score_breakdown",
+        "confidence_analysis",
+        "confidence_tips",
+        "top_strengths",
+        "critical_gaps",
+        "improvement_plan",
+        "next_suggested_plan",
+    ]
+    for key in required_keys:
+        if key not in result:
+            result.setdefault(key, [] if key in ["confidence_tips", "top_strengths", "critical_gaps"] else "")
 
     return result

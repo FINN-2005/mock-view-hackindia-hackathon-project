@@ -4,7 +4,7 @@ from typing import Optional
 import asyncio
 
 import database as db
-from services.gemini_service import interview_turn, evaluate_interview
+from services.gemini_service import interview_turn, evaluate_interview, get_detailed_evaluation
 from database import now_iso
 
 router = APIRouter(prefix="/api/interview", tags=["interview"])
@@ -149,7 +149,29 @@ async def end_interview(body: EndBody):
             "updated_profile": profile,
             "growth_score": 0,
             "job_likelihood": 0,
+            "confidence_score": 0,
             "summary": "Evaluation could not be completed.",
+        }
+
+    # Get detailed evaluation
+    detailed_eval = {}
+    try:
+        detailed_eval = await get_detailed_evaluation(
+            eval_result["updated_profile"],
+            notes,
+            config,
+            eval_result["growth_score"],
+        )
+    except Exception as e:
+        print(f"Detailed evaluation failed: {e}")
+        detailed_eval = {
+            "score_breakdown": "Unable to generate detailed breakdown.",
+            "confidence_analysis": "Unable to generate confidence analysis.",
+            "confidence_tips": [],
+            "top_strengths": [],
+            "critical_gaps": [],
+            "improvement_plan": "Unable to generate improvement plan.",
+            "next_suggested_plan": "Retry the interview to get a detailed analysis.",
         }
 
     # Overwrite profile
@@ -165,14 +187,18 @@ async def end_interview(body: EndBody):
         "date": now_iso(),
         "summary": eval_result["summary"],
         "job_likelihood": eval_result["job_likelihood"],
+        "confidence_score": eval_result.get("confidence_score", 0),
+        "detailed_evaluation": detailed_eval,
     }
     db.append_history(body.user_uuid, history_entry)
 
     results_payload = {
         "growth_score": eval_result["growth_score"],
         "job_likelihood": eval_result["job_likelihood"],
+        "confidence_score": eval_result.get("confidence_score", 0),
         "summary": eval_result["summary"],
         "notes": notes,
+        "detailed_evaluation": detailed_eval,
     }
 
     # Store last results for the results page

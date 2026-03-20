@@ -12,10 +12,11 @@ Full stack app: **React + Vite** frontend, **FastAPI** backend, **SQLite** datab
 cd backend
 pip install -r requirements.txt
 
-# Set your Gemini API key
-cp .env.example .env
+# Make a new file ".env" as root/backend/.env
 # Edit .env and set GEMINI_API_KEY=your_key_here
-
+```
+## run backend
+```
 uvicorn main:app --reload
 # Runs on http://localhost:8000
 ```
@@ -25,6 +26,9 @@ uvicorn main:app --reload
 ```bash
 cd frontend
 npm install
+```
+## run frontend
+```
 npm run dev
 # Runs on http://localhost:5173
 ```

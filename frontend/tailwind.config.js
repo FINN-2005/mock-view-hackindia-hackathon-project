@@ -13,7 +13,7 @@ export default {
         surface: '#0c1220',
         surface2: '#111c30',
         border: '#1e3048',
-        accent: '#0ea5e9',
+        accent: '#a855f7',
         success: '#10b981',
         danger: '#ef4444',
         gold: '#f59e0b',
